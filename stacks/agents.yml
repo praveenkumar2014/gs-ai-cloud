@@ -1,0 +1,72 @@
+services:
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    restart: unless-stopped
+    environment: {LOG_LEVEL: "${LOG_LEVEL:-INFO}"}
+    volumes: [crawl4ai_data:/app/data]
+    networks: [internal]
+    healthcheck: {test: ["CMD-SHELL", "curl -fsS http://localhost:11235/health || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: &default-logging {driver: json-file, options: {max-size: "10m", max-file: "5"}}
+  firecrawl:
+    image: mendableai/firecrawl:latest
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      HOST: 0.0.0.0
+      PORT: 3002
+    volumes: [firecrawl_data:/data]
+    networks: [internal, data]
+    healthcheck: {test: ["CMD-SHELL", "curl -fsS http://localhost:3002/v0/health || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+  browser-use:
+    image: ghcr.io/browser-use/browser-use:latest
+    restart: unless-stopped
+    environment:
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+      OPENAI_BASE_URL: http://litellm:4000/v1
+    volumes: [browser_use_data:/data]
+    networks: [internal]
+    shm_size: 2gb
+    healthcheck: {test: ["CMD-SHELL", "python -c 'print(1)'"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+  mcp-gateway:
+    image: docker/mcp-gateway:latest
+    restart: unless-stopped
+    environment: {MCP_GATEWAY_PORT: 8811, LOG_LEVEL: "${LOG_LEVEL:-INFO}"}
+    volumes: [mcp_gateway_data:/data]
+    networks: [internal]
+    healthcheck: {test: ["CMD-SHELL", "wget -qO- http://localhost:8811/health || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+  openmemory:
+    image: mem0ai/mem0:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+      OPENAI_BASE_URL: http://litellm:4000/v1
+    volumes: [openmemory_data:/app/data]
+    networks: [internal, data]
+    healthcheck: {test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+  agent-orchestrator:
+    image: ghcr.io/langchain-ai/langgraph-api:latest
+    restart: unless-stopped
+    environment:
+      REDIS_URI: redis://:${REDIS_PASSWORD}@redis:6379
+      DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+      OPENAI_BASE_URL: http://litellm:4000/v1
+    volumes: [agent_orchestrator_data:/data]
+    networks: [internal, data]
+    healthcheck: {test: ["CMD-SHELL", "curl -fsS http://localhost:8000/ok || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+volumes:
+  crawl4ai_data: {}
+  firecrawl_data: {}
+  browser_use_data: {}
+  mcp_gateway_data: {}
+  openmemory_data: {}
+  agent_orchestrator_data: {}

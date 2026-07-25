@@ -1,0 +1,186 @@
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    restart: unless-stopped
+    environment:
+      WEBUI_SECRET_KEY: ${OPENWEBUI_SECRET_KEY}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OPENAI_API_BASE_URL: http://litellm:4000/v1
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+    volumes: [openwebui_data:/app/backend/data]
+    networks: [edge, internal]
+    depends_on: [ollama, litellm]
+    labels: &openwebui-labels
+      traefik.enable: "true"
+      traefik.http.routers.openwebui.rule: Host(`${OPENWEBUI_HOST}`)
+      traefik.http.routers.openwebui.entrypoints: websecure
+      traefik.http.routers.openwebui.tls.certresolver: letsencrypt
+      traefik.http.services.openwebui.loadbalancer.server.port: "8080"
+    healthcheck: {test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: &default-logging {driver: json-file, options: {max-size: "10m", max-file: "5"}}
+
+  librechat:
+    image: ghcr.io/danny-avila/librechat:latest
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      MONGO_URI: mongodb://mongo:27017/LibreChat
+      JWT_SECRET: ${LIBRECHAT_JWT_SECRET}
+      JWT_REFRESH_SECRET: ${LIBRECHAT_JWT_REFRESH_SECRET}
+      OPENAI_REVERSE_PROXY: http://litellm:4000/v1
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+    volumes: [librechat_data:/app/client/public/images]
+    networks: [edge, internal]
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.librechat.rule: Host(`${LIBRECHAT_HOST}`)
+      traefik.http.routers.librechat.entrypoints: websecure
+      traefik.http.routers.librechat.tls.certresolver: letsencrypt
+      traefik.http.services.librechat.loadbalancer.server.port: "3080"
+    healthcheck: {test: ["CMD-SHELL", "wget -qO- http://localhost:3080/health || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes: [mongo_data:/data/db]
+    networks: [internal]
+    healthcheck: {test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+
+  flowise:
+    image: flowiseai/flowise:latest
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      FLOWISE_USERNAME: ${FLOWISE_USERNAME}
+      FLOWISE_PASSWORD: ${FLOWISE_PASSWORD}
+      DATABASE_PATH: /root/.flowise
+    volumes: [flowise_data:/root/.flowise]
+    networks: [edge, internal]
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.flowise.rule: Host(`${FLOWISE_HOST}`)
+      traefik.http.routers.flowise.entrypoints: websecure
+      traefik.http.routers.flowise.tls.certresolver: letsencrypt
+      traefik.http.services.flowise.loadbalancer.server.port: "3000"
+    healthcheck: {test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/v1/ping || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+
+  langflow:
+    image: langflowai/langflow:latest
+    restart: unless-stopped
+    environment:
+      LANGFLOW_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      LANGFLOW_SUPERUSER: ${LANGFLOW_SUPERUSER}
+      LANGFLOW_SUPERUSER_PASSWORD: ${LANGFLOW_SUPERUSER_PASSWORD}
+    volumes: [langflow_data:/app/langflow]
+    networks: [edge, internal, data]
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.langflow.rule: Host(`${LANGFLOW_HOST}`)
+      traefik.http.routers.langflow.entrypoints: websecure
+      traefik.http.routers.langflow.tls.certresolver: letsencrypt
+      traefik.http.services.langflow.loadbalancer.server.port: "7860"
+    healthcheck: {test: ["CMD-SHELL", "curl -fsS http://localhost:7860/health || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    environment:
+      N8N_HOST: ${N8N_HOST}
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://${N8N_HOST}/
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_USER_MANAGEMENT_JWT_SECRET: ${N8N_USER_MANAGEMENT_JWT_SECRET}
+    volumes: [n8n_data:/home/node/.n8n]
+    networks: [edge, internal, data]
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.n8n.rule: Host(`${N8N_HOST}`)
+      traefik.http.routers.n8n.entrypoints: websecure
+      traefik.http.routers.n8n.tls.certresolver: letsencrypt
+      traefik.http.services.n8n.loadbalancer.server.port: "5678"
+    healthcheck: {test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+
+  dify:
+    image: langgenius/dify-api:latest
+    restart: unless-stopped
+    environment:
+      MODE: api
+      SECRET_KEY: ${DIFY_SECRET_KEY}
+      DB_HOST: postgres
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_DATABASE: ${POSTGRES_DB}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      STORAGE_TYPE: s3
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET_NAME: dify
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      VECTOR_STORE: qdrant
+      QDRANT_URL: http://qdrant:6333
+    volumes: [dify_data:/app/api/storage]
+    networks: [edge, internal, data]
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.dify.rule: Host(`${DIFY_HOST}`)
+      traefik.http.routers.dify.entrypoints: websecure
+      traefik.http.routers.dify.tls.certresolver: letsencrypt
+      traefik.http.services.dify.loadbalancer.server.port: "5001"
+    healthcheck: {test: ["CMD-SHELL", "curl -fsS http://localhost:5001/health || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+
+  openhands:
+    image: docker.all-hands.dev/all-hands-ai/openhands:latest
+    restart: unless-stopped
+    environment: {SANDBOX_RUNTIME_CONTAINER_IMAGE: docker.all-hands.dev/all-hands-ai/runtime:latest, LOG_ALL_EVENTS: "true"}
+    volumes: [openhands_data:/.openhands, /var/run/docker.sock:/var/run/docker.sock]
+    networks: [edge, internal]
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.openhands.rule: Host(`${OPENHANDS_HOST}`)
+      traefik.http.routers.openhands.entrypoints: websecure
+      traefik.http.routers.openhands.tls.certresolver: letsencrypt
+      traefik.http.services.openhands.loadbalancer.server.port: "3000"
+    healthcheck: {test: ["CMD-SHELL", "curl -fsS http://localhost:3000/ || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+
+  anythingllm:
+    image: mintplexlabs/anythingllm:latest
+    restart: unless-stopped
+    environment:
+      STORAGE_DIR: /app/server/storage
+      JWT_SECRET: ${OPENWEBUI_SECRET_KEY}
+      LLM_PROVIDER: generic-openai
+      GENERIC_OPEN_AI_BASE_PATH: http://litellm:4000/v1
+      GENERIC_OPEN_AI_API_KEY: ${LITELLM_MASTER_KEY}
+    volumes: [anythingllm_data:/app/server/storage]
+    networks: [edge, internal]
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.anythingllm.rule: Host(`${ANYTHINGLLM_HOST}`)
+      traefik.http.routers.anythingllm.entrypoints: websecure
+      traefik.http.routers.anythingllm.tls.certresolver: letsencrypt
+      traefik.http.services.anythingllm.loadbalancer.server.port: "3001"
+    healthcheck: {test: ["CMD-SHELL", "curl -fsS http://localhost:3001/api/ping || exit 1"], interval: 30s, timeout: 10s, retries: 5}
+    logging: *default-logging
+volumes:
+  openwebui_data: {}
+  librechat_data: {}
+  mongo_data: {}
+  flowise_data: {}
+  langflow_data: {}
+  n8n_data: {}
+  dify_data: {}
+  openhands_data: {}
+  anythingllm_data: {}
