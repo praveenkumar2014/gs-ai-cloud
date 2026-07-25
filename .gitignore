@@ -1,0 +1,12 @@
+# Environment variables
+.env
+*.env.local
+
+# Backups archive files
+backups/*.tar.gz
+backups/*.sql
+
+# OS & Editor files
+.DS_Store
+*.swp
+*.tmp
