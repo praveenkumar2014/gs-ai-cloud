@@ -1,0 +1,273 @@
+version: '3.8'
+
+networks:
+  gs-ai-network:
+    external: true
+    name: ${DOCKER_NETWORK:-gs-ai-network}
+
+volumes:
+  open_webui_data:
+    name: gs_ai_open_webui_data
+  librechat_data:
+    name: gs_ai_librechat_data
+  flowise_data:
+    name: gs_ai_flowise_data
+  langflow_data:
+    name: gs_ai_langflow_data
+  dify_data:
+    name: gs_ai_dify_data
+  n8n_data:
+    name: gs_ai_n8n_data
+  openhands_data:
+    name: gs_ai_openhands_data
+  anythingllm_data:
+    name: gs_ai_anythingllm_data
+
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: gs-ai-open-webui
+    restart: unless-stopped
+    ports:
+      - "${OPEN_WEBUI_PORT:-8080}:8080"
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OPENAI_API_BASE_URL: http://litellm:4000
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY:-sk-gs-ai-cloud-master-key-change-me}
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-webui_secret_key_change_me}
+    volumes:
+      - open_webui_data:/app/backend/data
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  librechat:
+    image: ghcr.io/danny-avila/librechat-dev:latest
+    container_name: gs-ai-librechat
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${LIBRECHAT_PORT:-3080}:3080"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3080"
+      JWT_SECRET: ${LIBRECHAT_JWT_SECRET:-librechat_jwt_secret_change_me}
+      CREDS_KEY: ${LIBRECHAT_CREDS_KEY:-librechat_creds_key_32_chars_exact}
+      MONGO_URI: mongodb://librechat_mongo:27017/LibreChat
+      REDIS_URI: redis://:${REDIS_PASSWORD:-redis_secure_password_change_me}@redis:6379
+    volumes:
+      - librechat_data:/app/uploads
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3080 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  flowise:
+    image: flowiseai/flowise:latest
+    container_name: gs-ai-flowise
+    restart: unless-stopped
+    ports:
+      - "${FLOWISE_PORT:-3001}:3001"
+    environment:
+      PORT: 3001
+      FLOWISE_USERNAME: ${FLOWISE_USERNAME:-admin}
+      FLOWISE_PASSWORD: ${FLOWISE_PASSWORD:-flowise_admin_password_change_me}
+      DATABASE_PATH: /root/.flowise
+      APIKEY_PATH: /root/.flowise
+      SECRETKEY_PATH: /root/.flowise
+      LOG_LEVEL: info
+    volumes:
+      - flowise_data:/root/.flowise
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3001 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  langflow:
+    image: langflowai/langflow:latest
+    container_name: gs-ai-langflow
+    restart: unless-stopped
+    ports:
+      - "${LANGFLOW_PORT:-7860}:7860"
+    environment:
+      LANGFLOW_HOST: 0.0.0.0
+      LANGFLOW_PORT: 7860
+      LANGFLOW_DATABASE_URL: sqlite:////root/.langflow/langflow.db
+    volumes:
+      - langflow_data:/root/.langflow
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 7860 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  dify:
+    image: langgenius/dify-api:0.6.9
+    container_name: gs-ai-dify
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${DIFY_PORT:-8001}:5001"
+    environment:
+      MODE: api
+      LOG_LEVEL: INFO
+      SECRET_KEY: ${DIFY_SECRET_KEY:-dify_secret_key_change_me}
+      DB_USERNAME: ${POSTGRES_USER:-gscloud}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_password_change_me}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${POSTGRES_DB:-gscloud}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_password_change_me}
+    volumes:
+      - dify_data:/app/api/storage
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5001 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: gs-ai-n8n
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-gscloud}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-gscloud}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_password_change_me}
+      N8N_BASIC_AUTH_ACTIVE: ${N8N_BASIC_AUTH_ACTIVE:-true}
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD:-n8n_admin_password_change_me}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-n8n_encryption_key_change_me}
+      N8N_HOST: ${DOMAIN:-ai.yourdomain.com}
+      GENERIC_TIMEZONE: ${TZ:-UTC}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5678 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  openhands:
+    image: docker.all-hands.dev/all-hands-ai/openhands:0.9
+    container_name: gs-ai-openhands
+    restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+    ports:
+      - "${OPENHANDS_PORT:-3000}:3000"
+    environment:
+      SANDBOX_RUNTIME_CONTAINER_IMAGE: docker.all-hands.dev/all-hands-ai/runtime:0.9-nikolaik
+      LOG_ALL_EVENTS: "true"
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+    volumes:
+      - openhands_data:/app/workspace
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3000 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  anythingllm:
+    image: mintplexlabs/anythingllm:latest
+    container_name: gs-ai-anythingllm
+    restart: unless-stopped
+    ports:
+      - "${ANYTHINGLLM_PORT:-3002}:3001"
+    environment:
+      STORAGE_DIR: /app/server/storage
+      JWT_SECRET: ${ANYTHINGLLM_JWT_SECRET:-anythingllm_jwt_secret_change_me}
+    volumes:
+      - anythingllm_data:/app/server/storage
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3001 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

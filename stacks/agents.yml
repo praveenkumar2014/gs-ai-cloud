@@ -1,0 +1,184 @@
+version: '3.8'
+
+networks:
+  gs-ai-network:
+    external: true
+    name: ${DOCKER_NETWORK:-gs-ai-network}
+
+volumes:
+  crawl4ai_data:
+    name: gs_ai_crawl4ai_data
+  firecrawl_data:
+    name: gs_ai_firecrawl_data
+  browser_use_data:
+    name: gs_ai_browser_use_data
+  mcp_gateway_data:
+    name: gs_ai_mcp_gateway_data
+  openmemory_data:
+    name: gs_ai_openmemory_data
+  agent_orchestrator_data:
+    name: gs_ai_agent_orchestrator_data
+
+services:
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: gs-ai-crawl4ai
+    restart: unless-stopped
+    ports:
+      - "${CRAWL4AI_PORT:-11235}:11235"
+    environment:
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-crawl4ai_token_change_me}
+      PORT: 11235
+    volumes:
+      - crawl4ai_data:/app/data
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 11235 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  firecrawl:
+    image: mendable/firecrawl:latest
+    container_name: gs-ai-firecrawl
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "${FIRECRAWL_PORT:-3003}:3002"
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password_change_me}@redis:6379
+      NUM_WORKERS: ${FIRECRAWL_NUM_WORKERS:-4}
+      PORT: 3002
+    volumes:
+      - firecrawl_data:/app/data
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3002 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  browser-use:
+    image: browser-use/browser-use:latest
+    container_name: gs-ai-browser-use
+    restart: unless-stopped
+    ports:
+      - "${BROWSER_USE_PORT:-8082}:8082"
+    environment:
+      PORT: 8082
+      HEADLESS: "true"
+      OPENAI_API_BASE: http://litellm:4000
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY:-sk-gs-ai-cloud-master-key-change-me}
+    volumes:
+      - browser_use_data:/app/downloads
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8082 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  mcp-gateway:
+    image: ghcr.io/modelcontextprotocol/gateway:latest
+    container_name: gs-ai-mcp-gateway
+    restart: unless-stopped
+    ports:
+      - "${MCP_GATEWAY_PORT:-8083}:8083"
+    environment:
+      PORT: 8083
+      LOG_LEVEL: info
+    volumes:
+      - mcp_gateway_data:/etc/mcp
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8083 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  openmemory:
+    image: cavai/openmemory:latest
+    container_name: gs-ai-openmemory
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    ports:
+      - "${OPENMEMORY_PORT:-8084}:8084"
+    environment:
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-qdrant_secure_api_key_change_me}
+      PORT: 8084
+    volumes:
+      - openmemory_data:/app/storage
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8084 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  agent-orchestrator:
+    image: python:3.11-slim
+    container_name: gs-ai-agent-orchestrator
+    restart: unless-stopped
+    command: python3 -m http.server 8085
+    ports:
+      - "${AGENT_ORCHESTRATION_PORT:-8085}:8085"
+    environment:
+      LITELLM_ENDPOINT: http://litellm:4000
+      LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-sk-gs-ai-cloud-master-key-change-me}
+      QDRANT_ENDPOINT: http://qdrant:6333
+    volumes:
+      - agent_orchestrator_data:/app/agents
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8085 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
