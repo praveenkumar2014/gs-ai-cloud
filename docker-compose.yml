@@ -1,9 +1,702 @@
-name: gs-ai-cloud
+version: '3.8'
 
-include:
-  - stacks/core.yml
-  - stacks/database.yml
-  - stacks/ai.yml
-  - stacks/apps.yml
-  - stacks/agents.yml
-  - stacks/monitoring.yml
+networks:
+  gs-ai-network:
+    name: ${DOCKER_NETWORK:-gs-ai-network}
+    driver: bridge
+
+volumes:
+  traefik_acme:
+  postgres_data:
+  redis_data:
+  minio_data:
+  qdrant_data:
+  ollama_data:
+  vllm_data:
+  sglang_data:
+  infinity_data:
+  open_webui_data:
+  librechat_data:
+  flowise_data:
+  langflow_data:
+  dify_data:
+  n8n_data:
+  openhands_data:
+  anythingllm_data:
+  crawl4ai_data:
+  firecrawl_data:
+  browser_use_data:
+  mcp_gateway_data:
+  openmemory_data:
+  agent_orchestrator_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  uptime_kuma_data:
+
+services:
+  # STACK 1: CORE
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.1.1
+    container_name: gs-ai-docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      SERVICES: 1
+      TASKS: 1
+      INFO: 1
+      VERSION: 1
+      PING: 1
+      EVENTS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 2375 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  traefik:
+    image: traefik:v3.0
+    container_name: gs-ai-traefik
+    restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    environment:
+      - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ./configs/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./configs/traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik_acme:/etc/traefik/acme
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: gs-ai-watchtower
+    restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+    environment:
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      WATCHTOWER_POLL_INTERVAL: ${WATCHTOWER_POLL_INTERVAL:-86400}
+      WATCHTOWER_CLEANUP: "true"
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pidof watchtower || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  portainer-agent:
+    image: portainer/agent:2.19.5
+    container_name: gs-ai-portainer-agent
+    restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+    ports:
+      - "9001:9001"
+    environment:
+      AGENT_SECRET: ${PORTAINER_AGENT_SECRET:-portainer_secret_token_change_me}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 9001 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+  # STACK 2: DATABASE
+  postgres:
+    image: postgres:16-alpine
+    container_name: gs-ai-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gscloud}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_password_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-gscloud}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gscloud} -d ${POSTGRES_DB:-gscloud}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: gs-ai-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-redis_secure_password_change_me}
+      --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secure_password_change_me}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2024-03-15T20-13-24Z
+    container_name: gs-ai-minio
+    restart: unless-stopped
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secure_password_change_me}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:v1.8.4
+    container_name: gs-ai-qdrant
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-qdrant_secure_api_key_change_me}
+    volumes:
+      - qdrant_data:/qdrant/storage
+      - ./configs/qdrant/config.yaml:/qdrant/config/production.yaml:ro
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 6333 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # STACK 3: AI ENGINE
+  ollama:
+    image: ollama/ollama:latest
+    container_name: gs-ai-ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-v1.35.30
+    container_name: gs-ai-litellm
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${LITELLM_PORT:-4000}:4000"
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-gs-ai-cloud-master-key-change-me}
+    volumes:
+      - ./configs/litellm/config.yaml:/app/config.yaml:ro
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 4000 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: gs-ai-vllm
+    restart: unless-stopped
+    ports:
+      - "${VLLM_PORT:-8000}:8000"
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    command: --model ${VLLM_MODEL:-facebook/opt-125m} --port 8000 --host 0.0.0.0
+    volumes:
+      - vllm_data:/root/.cache/huggingface
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8000 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  sglang:
+    image: lmsysorg/sglang:latest
+    container_name: gs-ai-sglang
+    restart: unless-stopped
+    ports:
+      - "${SGLANG_PORT:-30000}:30000"
+    command: python3 -m sglang.launch_server --model-path ${SGLANG_MODEL:-meta-llama/Llama-2-7b-chat-hf} --host 0.0.0.0 --port 30000
+    volumes:
+      - sglang_data:/root/.cache/huggingface
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 30000 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  infinity:
+    image: michaelfeil/infinity:latest
+    container_name: gs-ai-infinity
+    restart: unless-stopped
+    ports:
+      - "${INFINITY_PORT:-7997}:7997"
+    command: v2 --model-id ${INFINITY_MODEL:-BAAI/bge-small-en-v1.5} --port 7997
+    volumes:
+      - infinity_data:/root/.cache/huggingface
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 7997 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # STACK 4: AI APPLICATIONS
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: gs-ai-open-webui
+    restart: unless-stopped
+    ports:
+      - "${OPEN_WEBUI_PORT:-8080}:8080"
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OPENAI_API_BASE_URL: http://litellm:4000
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY:-sk-gs-ai-cloud-master-key-change-me}
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-webui_secret_key_change_me}
+    volumes:
+      - open_webui_data:/app/backend/data
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  librechat:
+    image: ghcr.io/danny-avila/librechat-dev:latest
+    container_name: gs-ai-librechat
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${LIBRECHAT_PORT:-3080}:3080"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3080"
+      JWT_SECRET: ${LIBRECHAT_JWT_SECRET:-librechat_jwt_secret_change_me}
+      CREDS_KEY: ${LIBRECHAT_CREDS_KEY:-librechat_creds_key_32_chars_exact}
+    volumes:
+      - librechat_data:/app/uploads
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3080 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  flowise:
+    image: flowiseai/flowise:latest
+    container_name: gs-ai-flowise
+    restart: unless-stopped
+    ports:
+      - "${FLOWISE_PORT:-3001}:3001"
+    environment:
+      PORT: 3001
+      FLOWISE_USERNAME: ${FLOWISE_USERNAME:-admin}
+      FLOWISE_PASSWORD: ${FLOWISE_PASSWORD:-flowise_admin_password_change_me}
+    volumes:
+      - flowise_data:/root/.flowise
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3001 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  langflow:
+    image: langflowai/langflow:latest
+    container_name: gs-ai-langflow
+    restart: unless-stopped
+    ports:
+      - "${LANGFLOW_PORT:-7860}:7860"
+    environment:
+      LANGFLOW_HOST: 0.0.0.0
+      LANGFLOW_PORT: 7860
+    volumes:
+      - langflow_data:/root/.langflow
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 7860 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  dify:
+    image: langgenius/dify-api:0.6.9
+    container_name: gs-ai-dify
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${DIFY_PORT:-8001}:5001"
+    environment:
+      MODE: api
+      LOG_LEVEL: INFO
+      SECRET_KEY: ${DIFY_SECRET_KEY:-dify_secret_key_change_me}
+    volumes:
+      - dify_data:/app/api/storage
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5001 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: gs-ai-n8n
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-gscloud}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-gscloud}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_password_change_me}
+      N8N_BASIC_AUTH_ACTIVE: ${N8N_BASIC_AUTH_ACTIVE:-true}
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD:-n8n_admin_password_change_me}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-n8n_encryption_key_change_me}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5678 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  openhands:
+    image: docker.all-hands.dev/all-hands-ai/openhands:0.9
+    container_name: gs-ai-openhands
+    restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+    ports:
+      - "${OPENHANDS_PORT:-3000}:3000"
+    environment:
+      SANDBOX_RUNTIME_CONTAINER_IMAGE: docker.all-hands.dev/all-hands-ai/runtime:0.9-nikolaik
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+    volumes:
+      - openhands_data:/app/workspace
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3000 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  anythingllm:
+    image: mintplexlabs/anythingllm:latest
+    container_name: gs-ai-anythingllm
+    restart: unless-stopped
+    ports:
+      - "${ANYTHINGLLM_PORT:-3002}:3001"
+    environment:
+      STORAGE_DIR: /app/server/storage
+      JWT_SECRET: ${ANYTHINGLLM_JWT_SECRET:-anythingllm_jwt_secret_change_me}
+    volumes:
+      - anythingllm_data:/app/server/storage
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3001 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # STACK 5: AGENTS
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: gs-ai-crawl4ai
+    restart: unless-stopped
+    ports:
+      - "${CRAWL4AI_PORT:-11235}:11235"
+    volumes:
+      - crawl4ai_data:/app/data
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 11235 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  firecrawl:
+    image: mendable/firecrawl:latest
+    container_name: gs-ai-firecrawl
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "${FIRECRAWL_PORT:-3003}:3002"
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password_change_me}@redis:6379
+      NUM_WORKERS: ${FIRECRAWL_NUM_WORKERS:-4}
+    volumes:
+      - firecrawl_data:/app/data
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3002 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  browser-use:
+    image: browser-use/browser-use:latest
+    container_name: gs-ai-browser-use
+    restart: unless-stopped
+    ports:
+      - "${BROWSER_USE_PORT:-8082}:8082"
+    environment:
+      PORT: 8082
+      HEADLESS: "true"
+    volumes:
+      - browser_use_data:/app/downloads
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8082 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  mcp-gateway:
+    image: ghcr.io/modelcontextprotocol/gateway:latest
+    container_name: gs-ai-mcp-gateway
+    restart: unless-stopped
+    ports:
+      - "${MCP_GATEWAY_PORT:-8083}:8083"
+    volumes:
+      - mcp_gateway_data:/etc/mcp
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8083 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  openmemory:
+    image: cavai/openmemory:latest
+    container_name: gs-ai-openmemory
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    ports:
+      - "${OPENMEMORY_PORT:-8084}:8084"
+    volumes:
+      - openmemory_data:/app/storage
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8084 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  agent-orchestrator:
+    image: python:3.11-slim
+    container_name: gs-ai-agent-orchestrator
+    restart: unless-stopped
+    command: python3 -m http.server 8085
+    ports:
+      - "${AGENT_ORCHESTRATION_PORT:-8085}:8085"
+    volumes:
+      - agent_orchestrator_data:/app/agents
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8085 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # STACK 6: MONITORING
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: gs-ai-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9090"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: gs-ai-grafana
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-grafana_admin_password_change_me}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./configs/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3000 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: gs-ai-loki
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./configs/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/tmp/loki
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3100 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  promtail:
+    image: grafana/promtail:2.9.4
+    container_name: gs-ai-promtail
+    restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    ports:
+      - "${PROMTAIL_PORT:-9080}:9080"
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./configs/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 9080 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.11
+    container_name: gs-ai-uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "${UPTIME_KUMA_PORT:-3005}:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3001 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
