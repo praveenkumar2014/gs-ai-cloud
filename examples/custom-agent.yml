@@ -1,0 +1,28 @@
+version: '3.8'
+
+# Example Custom Agent composition connecting to GS-AI-CLOUD infrastructure
+
+networks:
+  gs-ai-network:
+    external: true
+    name: ${DOCKER_NETWORK:-gs-ai-network}
+
+services:
+  my-custom-ai-agent:
+    image: python:3.11-slim
+    container_name: gs-ai-custom-agent
+    restart: unless-stopped
+    environment:
+      OPENAI_API_BASE: http://litellm:4000
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY:-sk-gs-ai-cloud-master-key-change-me}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-qdrant_secure_api_key_change_me}
+    command: python3 -c "print('Custom Agent Initialized and Connected to GS-AI-CLOUD!')"
+    networks:
+      - gs-ai-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
