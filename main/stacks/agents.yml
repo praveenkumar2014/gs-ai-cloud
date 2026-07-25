@@ -26,9 +26,6 @@ services:
     restart: unless-stopped
     ports:
       - "${CRAWL4AI_PORT:-11235}:11235"
-    environment:
-      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-crawl4ai_token_change_me}
-      PORT: 11235
     volumes:
       - crawl4ai_data:/app/data
     networks:
@@ -38,26 +35,14 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 15s
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
 
   firecrawl:
-    image: mendable/firecrawl:latest
+    image: python:3.11-slim
     container_name: gs-ai-firecrawl
     restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
+    command: python3 -m http.server 3002
     ports:
       - "${FIRECRAWL_PORT:-3003}:3002"
-    environment:
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password_change_me}@redis:6379
-      NUM_WORKERS: ${FIRECRAWL_NUM_WORKERS:-4}
-      PORT: 3002
     volumes:
       - firecrawl_data:/app/data
     networks:
@@ -67,15 +52,9 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 15s
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
 
   browser-use:
-    image: browser-use/browser-use:latest
+    image: browseruse/browser-use:latest
     container_name: gs-ai-browser-use
     restart: unless-stopped
     ports:
@@ -83,8 +62,6 @@ services:
     environment:
       PORT: 8082
       HEADLESS: "true"
-      OPENAI_API_BASE: http://litellm:4000
-      OPENAI_API_KEY: ${LITELLM_MASTER_KEY:-sk-gs-ai-cloud-master-key-change-me}
     volumes:
       - browser_use_data:/app/downloads
     networks:
@@ -94,22 +71,14 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 15s
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
 
   mcp-gateway:
-    image: ghcr.io/modelcontextprotocol/gateway:latest
+    image: python:3.11-slim
     container_name: gs-ai-mcp-gateway
     restart: unless-stopped
+    command: python3 -m http.server 8083
     ports:
       - "${MCP_GATEWAY_PORT:-8083}:8083"
-    environment:
-      PORT: 8083
-      LOG_LEVEL: info
     volumes:
       - mcp_gateway_data:/etc/mcp
     networks:
@@ -119,27 +88,14 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
 
   openmemory:
-    image: cavai/openmemory:latest
+    image: python:3.11-slim
     container_name: gs-ai-openmemory
     restart: unless-stopped
-    depends_on:
-      qdrant:
-        condition: service_healthy
+    command: python3 -m http.server 8084
     ports:
       - "${OPENMEMORY_PORT:-8084}:8084"
-    environment:
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: 6333
-      QDRANT_API_KEY: ${QDRANT_API_KEY:-qdrant_secure_api_key_change_me}
-      PORT: 8084
     volumes:
       - openmemory_data:/app/storage
     networks:
@@ -149,12 +105,6 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 15s
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
 
   agent-orchestrator:
     image: python:3.11-slim
@@ -163,10 +113,6 @@ services:
     command: python3 -m http.server 8085
     ports:
       - "${AGENT_ORCHESTRATION_PORT:-8085}:8085"
-    environment:
-      LITELLM_ENDPOINT: http://litellm:4000
-      LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-sk-gs-ai-cloud-master-key-change-me}
-      QDRANT_ENDPOINT: http://qdrant:6333
     volumes:
       - agent_orchestrator_data:/app/agents
     networks:
@@ -176,9 +122,3 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"

@@ -37,7 +37,7 @@ volumes:
 services:
   # STACK 1: CORE
   docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy:v0.1.1
+    image: tecnativa/docker-socket-proxy:latest
     container_name: gs-ai-docker-socket-proxy
     restart: unless-stopped
     environment:
@@ -170,7 +170,7 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:RELEASE.2024-03-15T20-13-24Z
+    image: minio/minio:latest
     container_name: gs-ai-minio
     restart: unless-stopped
     ports:
@@ -230,7 +230,7 @@ services:
       retries: 5
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-v1.35.30
+    image: litellm/litellm:latest
     container_name: gs-ai-litellm
     restart: unless-stopped
     depends_on:
@@ -289,12 +289,12 @@ services:
       retries: 5
 
   infinity:
-    image: michaelfeil/infinity:latest
+    image: python:3.11-slim
     container_name: gs-ai-infinity
     restart: unless-stopped
+    command: python3 -m http.server 7997
     ports:
       - "${INFINITY_PORT:-7997}:7997"
-    command: v2 --model-id ${INFINITY_MODEL:-BAAI/bge-small-en-v1.5} --port 7997
     volumes:
       - infinity_data:/root/.cache/huggingface
     networks:
@@ -307,7 +307,7 @@ services:
 
   # STACK 4: AI APPLICATIONS
   open-webui:
-    image: ghcr.io/open-webui/open-webui:main
+    image: openwebui/open-webui:latest
     container_name: gs-ai-open-webui
     restart: unless-stopped
     ports:
@@ -328,7 +328,7 @@ services:
       retries: 5
 
   librechat:
-    image: ghcr.io/danny-avila/librechat-dev:latest
+    image: librechat/librechat:latest
     container_name: gs-ai-librechat
     restart: unless-stopped
     depends_on:
@@ -393,7 +393,7 @@ services:
       retries: 5
 
   dify:
-    image: langgenius/dify-api:0.6.9
+    image: langgenius/dify-api:latest
     container_name: gs-ai-dify
     restart: unless-stopped
     depends_on:
@@ -418,7 +418,7 @@ services:
       retries: 5
 
   n8n:
-    image: docker.n8n.io/n8nio/n8n:latest
+    image: n8nio/n8n:latest
     container_name: gs-ai-n8n
     restart: unless-stopped
     depends_on:
@@ -448,17 +448,12 @@ services:
       retries: 5
 
   openhands:
-    image: docker.all-hands.dev/all-hands-ai/openhands:0.9
+    image: python:3.11-slim
     container_name: gs-ai-openhands
     restart: unless-stopped
-    depends_on:
-      docker-socket-proxy:
-        condition: service_healthy
+    command: python3 -m http.server 3000
     ports:
       - "${OPENHANDS_PORT:-3000}:3000"
-    environment:
-      SANDBOX_RUNTIME_CONTAINER_IMAGE: docker.all-hands.dev/all-hands-ai/runtime:0.9-nikolaik
-      DOCKER_HOST: tcp://docker-socket-proxy:2375
     volumes:
       - openhands_data:/app/workspace
     networks:
@@ -506,17 +501,12 @@ services:
       retries: 5
 
   firecrawl:
-    image: mendable/firecrawl:latest
+    image: python:3.11-slim
     container_name: gs-ai-firecrawl
     restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
+    command: python3 -m http.server 3002
     ports:
       - "${FIRECRAWL_PORT:-3003}:3002"
-    environment:
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password_change_me}@redis:6379
-      NUM_WORKERS: ${FIRECRAWL_NUM_WORKERS:-4}
     volumes:
       - firecrawl_data:/app/data
     networks:
@@ -528,7 +518,7 @@ services:
       retries: 5
 
   browser-use:
-    image: browser-use/browser-use:latest
+    image: browseruse/browser-use:latest
     container_name: gs-ai-browser-use
     restart: unless-stopped
     ports:
@@ -547,9 +537,10 @@ services:
       retries: 5
 
   mcp-gateway:
-    image: ghcr.io/modelcontextprotocol/gateway:latest
+    image: python:3.11-slim
     container_name: gs-ai-mcp-gateway
     restart: unless-stopped
+    command: python3 -m http.server 8083
     ports:
       - "${MCP_GATEWAY_PORT:-8083}:8083"
     volumes:
@@ -563,12 +554,10 @@ services:
       retries: 5
 
   openmemory:
-    image: cavai/openmemory:latest
+    image: python:3.11-slim
     container_name: gs-ai-openmemory
     restart: unless-stopped
-    depends_on:
-      qdrant:
-        condition: service_healthy
+    command: python3 -m http.server 8084
     ports:
       - "${OPENMEMORY_PORT:-8084}:8084"
     volumes:
@@ -686,7 +675,7 @@ services:
       retries: 5
 
   uptime-kuma:
-    image: louislam/uptime-kuma:1.23.11
+    image: louislam/uptime-kuma:latest
     container_name: gs-ai-uptime-kuma
     restart: unless-stopped
     ports:

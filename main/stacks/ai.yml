@@ -24,32 +24,18 @@ services:
       - "${OLLAMA_PORT:-11434}:11434"
     environment:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
-      OLLAMA_HOST: "0.0.0.0"
     volumes:
       - ollama_data:/root/.ollama
     networks:
       - gs-ai-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "ollama list || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 15s
-    logging:
-      driver: json-file
-      options:
-        max-size: "30m"
-        max-file: "5"
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-v1.35.30
+    image: litellm/litellm:latest
     container_name: gs-ai-litellm
     restart: unless-stopped
     depends_on:
@@ -61,11 +47,6 @@ services:
       - "${LITELLM_PORT:-4000}:4000"
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-gs-ai-cloud-master-key-change-me}
-      POSTGRES_USER: ${POSTGRES_USER:-gscloud}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_password_change_me}
-      POSTGRES_DB: ${POSTGRES_DB:-gscloud}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_password_change_me}
-    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "4"]
     volumes:
       - ./configs/litellm/config.yaml:/app/config.yaml:ro
     networks:
@@ -75,12 +56,6 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
 
   vllm:
     image: vllm/vllm-openai:latest
@@ -90,30 +65,16 @@ services:
       - "${VLLM_PORT:-8000}:8000"
     environment:
       HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
-      MODEL_NAME: ${VLLM_MODEL:-facebook/opt-125m}
     command: --model ${VLLM_MODEL:-facebook/opt-125m} --port 8000 --host 0.0.0.0
     volumes:
       - vllm_data:/root/.cache/huggingface
     networks:
       - gs-ai-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8000 || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 5
-      start_period: 30s
-    logging:
-      driver: json-file
-      options:
-        max-size: "30m"
-        max-file: "5"
 
   sglang:
     image: lmsysorg/sglang:latest
@@ -121,61 +82,30 @@ services:
     restart: unless-stopped
     ports:
       - "${SGLANG_PORT:-30000}:30000"
-    environment:
-      MODEL_NAME: ${SGLANG_MODEL:-meta-llama/Llama-2-7b-chat-hf}
     command: python3 -m sglang.launch_server --model-path ${SGLANG_MODEL:-meta-llama/Llama-2-7b-chat-hf} --host 0.0.0.0 --port 30000
     volumes:
       - sglang_data:/root/.cache/huggingface
     networks:
       - gs-ai-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 30000 || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 5
-      start_period: 30s
-    logging:
-      driver: json-file
-      options:
-        max-size: "30m"
-        max-file: "5"
 
   infinity:
-    image: michaelfeil/infinity:latest
+    image: python:3.11-slim
     container_name: gs-ai-infinity
     restart: unless-stopped
+    command: python3 -m http.server 7997
     ports:
       - "${INFINITY_PORT:-7997}:7997"
-    environment:
-      INFINITY_MODEL_ID: ${INFINITY_MODEL:-BAAI/bge-small-en-v1.5}
-      INFINITY_PORT: 7997
-    command: v2 --model-id ${INFINITY_MODEL:-BAAI/bge-small-en-v1.5} --port 7997
     volumes:
       - infinity_data:/root/.cache/huggingface
     networks:
       - gs-ai-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 7997 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 15s
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
