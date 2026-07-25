@@ -23,6 +23,16 @@ networks:
     name: gs-ai-cloud-monitoring
     driver: bridge
 
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:-./secrets/postgres_password}
+  redis_password:
+    file: ${REDIS_PASSWORD_FILE:-./secrets/redis_password}
+  minio_root_password:
+    file: ${MINIO_ROOT_PASSWORD_FILE:-./secrets/minio_root_password}
+  litellm_master_key:
+    file: ${LITELLM_MASTER_KEY_FILE:-./secrets/litellm_master_key}
+
 x-logging: &default-logging
   driver: json-file
   options:

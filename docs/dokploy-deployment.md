@@ -1,27 +1,24 @@
 # Dokploy Deployment Guide
 
-## Purpose
+## Target domain
 
-This guide covers the Dokploy Deployment workflow for GS-AI-CLOUD on Docker Compose v2 and Dokploy.
+This repository is prepared for `admin.guidesoft.online` by default. Update `DOMAIN` in Dokploy if you want a different root domain.
 
-## Prerequisites
+## Deploy in Dokploy
 
-- Docker Engine with Compose v2.
-- Dokploy host with DNS pointing to the server.
-- `.env` created from `.env.example` with production secrets.
-- NVIDIA Container Toolkit for the `gpu` profile when using accelerated runtimes.
+1. Create a new **Compose** application in Dokploy.
+2. Use repository `praveenkumar2014/gs-ai-cloud` and branch `main`.
+3. Set the compose file path to `docker-compose.yml`.
+4. Import `.env.example` into Dokploy environment variables.
+5. Replace every `change-me-*` secret before the first deployment.
+6. Confirm DNS records for the configured hostnames point to the Dokploy server.
+7. Deploy with profile `cpu` unless the host has NVIDIA Container Toolkit; then use `gpu`.
+8. After deployment, open `https://chat.admin.guidesoft.online`, `https://grafana.admin.guidesoft.online`, and `https://status.admin.guidesoft.online`.
 
-## Procedure
+## Required exposed ports
 
-1. Review `docker-compose.yml` and the modular files in `stacks/`.
-2. Validate configuration with `docker compose --profile cpu config` or `docker compose --profile gpu config`.
-3. Run the matching script from `scripts/` when applicable.
-4. Confirm service status with `./scripts/healthcheck.sh` and Dokploy logs.
+Only ports `80/tcp` and `443/tcp` need to be exposed publicly. Databases and model runtimes remain on private Docker networks.
 
-## Production notes
+## Post-deploy checks
 
-- Back up named volumes before major changes with `./scripts/backup.sh`.
-- Keep all application data on named volumes.
-- Use Dokploy secrets or environment variables for credentials.
-- Monitor application health in Grafana and Uptime Kuma.
-- Review service-specific upstream documentation before enabling public access to new tools.
+Run `./scripts/healthcheck.sh` from the Dokploy terminal or inspect service health in the Dokploy UI. Configure Uptime Kuma checks for the public application URLs after first login.
