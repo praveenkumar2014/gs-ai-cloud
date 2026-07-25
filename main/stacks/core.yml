@@ -1,0 +1,131 @@
+version: '3.8'
+
+networks:
+  gs-ai-network:
+    external: true
+    name: ${DOCKER_NETWORK:-gs-ai-network}
+
+volumes:
+  traefik_acme:
+    name: gs_ai_traefik_acme
+
+services:
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.1.1
+    container_name: gs-ai-docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      SERVICES: 1
+      TASKS: 1
+      INFO: 1
+      VERSION: 1
+      PING: 1
+      EVENTS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 2375 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  traefik:
+    image: traefik:v3.0
+    container_name: gs-ai-traefik
+    restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    environment:
+      - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ./configs/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./configs/traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik_acme:/etc/traefik/acme
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: gs-ai-watchtower
+    restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+    environment:
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      WATCHTOWER_POLL_INTERVAL: ${WATCHTOWER_POLL_INTERVAL:-86400}
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_INCLUDE_STOPPED: "false"
+      WATCHTOWER_REVIVE_STOPPED: "false"
+      TZ: ${TZ:-UTC}
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pidof watchtower || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  portainer-agent:
+    image: portainer/agent:2.19.5
+    container_name: gs-ai-portainer-agent
+    restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+    ports:
+      - "9001:9001"
+    environment:
+      AGENT_SECRET: ${PORTAINER_AGENT_SECRET:-portainer_secret_token_change_me}
+      LOG_LEVEL: INFO
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+    networks:
+      - gs-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 9001 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
