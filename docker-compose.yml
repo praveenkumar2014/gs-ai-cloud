@@ -1,0 +1,40 @@
+name: ${COMPOSE_PROJECT_NAME:-gs-ai-cloud}
+include:
+  - stacks/core.yml
+  - stacks/database.yml
+  - stacks/ai.yml
+  - stacks/apps.yml
+  - stacks/agents.yml
+  - stacks/monitoring.yml
+
+networks:
+  edge:
+    name: gs-ai-cloud-edge
+    driver: bridge
+  internal:
+    name: gs-ai-cloud-internal
+    driver: bridge
+    internal: true
+  data:
+    name: gs-ai-cloud-data
+    driver: bridge
+    internal: true
+  monitoring:
+    name: gs-ai-cloud-monitoring
+    driver: bridge
+
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:-./secrets/postgres_password}
+  redis_password:
+    file: ${REDIS_PASSWORD_FILE:-./secrets/redis_password}
+  minio_root_password:
+    file: ${MINIO_ROOT_PASSWORD_FILE:-./secrets/minio_root_password}
+  litellm_master_key:
+    file: ${LITELLM_MASTER_KEY_FILE:-./secrets/litellm_master_key}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"

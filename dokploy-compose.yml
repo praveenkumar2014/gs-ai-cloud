@@ -1,0 +1,4 @@
+# Dokploy Compose entrypoint.
+# Use this file only in a Dokploy **Compose** application. Do not configure it as a Dockerfile.
+include:
+  - docker-compose.yml
